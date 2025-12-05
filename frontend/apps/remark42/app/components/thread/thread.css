@@ -9,3 +9,61 @@
 .thread_level_6 .thread_level_6 {
   margin-left: 0;
 }
+
+/* YouTube-style: no indentation for nested replies */
+.thread_youtube {
+  margin-left: 0;
+}
+
+.thread_reply {
+  margin-left: 44px;
+  margin-bottom: 8px;
+}
+
+/* Replies toggle button */
+.thread__replies-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  margin-left: 44px;
+  margin-top: 4px;
+  margin-bottom: 8px;
+  background: transparent;
+  border: none;
+  color: var(--color-primary, #065fd4);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 18px;
+  transition: background-color 0.2s;
+}
+
+.thread__replies-toggle:hover {
+  background-color: rgba(6, 95, 212, 0.1);
+}
+
+.thread__replies-toggle-icon {
+  transition: transform 0.2s ease;
+}
+
+.thread__replies-toggle_expanded .thread__replies-toggle-icon {
+  transform: rotate(180deg);
+}
+
+/* Replies container */
+.thread__replies-container {
+  margin-top: 8px;
+}
+
+/* Comment mention styling */
+.comment__mention {
+  color: var(--color-primary, #065fd4);
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.comment__mention:hover {
+  text-decoration: underline;
+}

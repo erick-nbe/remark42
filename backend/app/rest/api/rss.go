@@ -1,13 +1,13 @@
 package api
 
 import (
+	"encoding/xml"
 	"fmt"
 	"net/http"
 	"time"
 
 	cache "github.com/go-pkgz/lcw/v2"
 	log "github.com/go-pkgz/lgr"
-	"github.com/gorilla/feeds"
 
 	"github.com/umputun/remark42/backend/app/rest"
 	"github.com/umputun/remark42/backend/app/store"
@@ -30,6 +30,36 @@ const maxReplyDuration = 31 * 24 * time.Hour
 
 // ui uses links like <post-url>#remark42__comment-<comment-id>
 const uiNav = "#remark42__comment-"
+
+// RssItemWithAvatar extends RssItem with author avatar support
+type RssItemWithAvatar struct {
+	XMLName      xml.Name `xml:"item"`
+	Title        string   `xml:"title"`
+	Link         string   `xml:"link"`
+	Description  string   `xml:"description"`
+	Author       string   `xml:"author,omitempty"`
+	Guid         string   `xml:"guid"`
+	PubDate      string   `xml:"pubDate,omitempty"`
+	AuthorAvatar string   `xml:"authorAvatar,omitempty"`
+}
+
+// RssFeedWithAvatar represents RSS feed with avatar support
+type RssFeedWithAvatar struct {
+	XMLName     xml.Name `xml:"channel"`
+	Title       string   `xml:"title"`
+	Link        string   `xml:"link"`
+	Description string   `xml:"description"`
+	PubDate     string   `xml:"pubDate,omitempty"`
+	Items       []*RssItemWithAvatar
+}
+
+// RssFeedXmlWithAvatar is the wrapper for RSS XML output
+type RssFeedXmlWithAvatar struct {
+	XMLName          xml.Name `xml:"rss"`
+	Version          string   `xml:"version,attr"`
+	ContentNamespace string   `xml:"xmlns:content,attr"`
+	Channel          *RssFeedWithAvatar
+}
 
 // GET /rss/post?site=siteID&url=post-url
 func (s *rss) postCommentsCtrl(w http.ResponseWriter, r *http.Request) {
@@ -133,41 +163,55 @@ func (s *rss) toRssFeed(url string, comments []store.Comment, description string
 		lastCommentTS = comments[0].Timestamp
 	}
 
-	feed := &feeds.Feed{
+	feed := &RssFeedWithAvatar{
 		Title:       "Remark42 comments",
-		Link:        &feeds.Link{Href: url},
+		Link:        url,
 		Description: description,
-		Created:     lastCommentTS,
+		PubDate:     lastCommentTS.Format(time.RFC1123Z),
+		Items:       []*RssItemWithAvatar{},
 	}
 
-	feed.Items = []*feeds.Item{}
 	for i, c := range comments {
-		f := feeds.Item{
-			Title:       c.User.Name,
-			Link:        &feeds.Link{Href: c.Locator.URL + uiNav + c.ID},
-			Description: c.Text,
-			Created:     c.Timestamp,
-			Author:      &feeds.Author{Name: c.User.Name},
-			Id:          c.ID,
-		}
+		title := c.User.Name
+		desc := c.Text
 		if c.ParentID != "" {
 			// add indication to parent comment
 			parentComment, err := s.dataService.Get(c.Locator, c.ParentID, store.User{})
 			if err == nil {
-				f.Title = fmt.Sprintf("%s > %s", c.User.Name, parentComment.User.Name)
-				f.Description = f.Description + "<blockquote><p>" + parentComment.Snippet(300) + "</p></blockquote>"
+				title = fmt.Sprintf("%s > %s", c.User.Name, parentComment.User.Name)
+				desc = desc + "<blockquote><p>" + parentComment.Snippet(300) + "</p></blockquote>"
 			} else {
 				log.Printf("[WARN] failed to get info about parent comment, %s", err)
 			}
 		}
 		if c.PostTitle != "" {
-			f.Title = f.Title + ", " + c.PostTitle
+			title = title + ", " + c.PostTitle
 		}
 
-		feed.Items = append(feed.Items, &f)
+		item := &RssItemWithAvatar{
+			Title:        title,
+			Link:         c.Locator.URL + uiNav + c.ID,
+			Description:  desc,
+			Author:       c.User.Name,
+			Guid:         c.ID,
+			PubDate:      c.Timestamp.Format(time.RFC1123Z),
+			AuthorAvatar: c.User.Picture,
+		}
+		feed.Items = append(feed.Items, item)
 		if i > maxRssItems {
 			break
 		}
 	}
-	return feed.ToRss()
+
+	feedXml := &RssFeedXmlWithAvatar{
+		Version:          "2.0",
+		ContentNamespace: "http://purl.org/rss/1.0/modules/content/",
+		Channel:          feed,
+	}
+
+	data, err := xml.MarshalIndent(feedXml, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return xml.Header[:len(xml.Header)-1] + string(data), nil
 }

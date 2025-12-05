@@ -52,6 +52,12 @@ export type CommentProps = {
   getPreview?: typeof getPreview;
   uploadImage?: typeof uploadImage;
   intl: IntlShape;
+  /** Name of the user being replied to (for @mention display) */
+  parentAuthor?: string;
+  /** User ID of the parent author (for opening profile) */
+  parentUserId?: string;
+  /** User picture URL of the parent author (for opening profile) */
+  parentUserPicture?: string;
 } & Partial<typeof boundActions>;
 
 export interface State {
@@ -128,7 +134,55 @@ export class Comment extends Component<CommentProps, State> {
   componentDidMount() {
     // eslint-disable-next-line react/no-did-mount-set-state
     this.setState({ initial: false });
+    
+    // Add click handler for @mentions to open user profile
+    this.attachMentionHandler();
   }
+
+  componentDidUpdate() {
+    // Re-attach handler after updates (in case content changed)
+    this.attachMentionHandler();
+  }
+
+  componentWillUnmount() {
+    this.detachMentionHandler();
+  }
+
+  attachMentionHandler = () => {
+    const textEl = this.textNode.current;
+    if (textEl) {
+      // Remove first to avoid duplicates
+      textEl.removeEventListener('click', this.handleMentionClick);
+      textEl.addEventListener('click', this.handleMentionClick);
+    }
+  };
+
+  detachMentionHandler = () => {
+    this.textNode.current?.removeEventListener('click', this.handleMentionClick);
+  };
+
+  handleMentionClick = (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    // Check if clicked element is a mention link or inside one
+    const mentionEl = target.closest('.comment__mention') as HTMLElement | null;
+    if (mentionEl) {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const userId = mentionEl.getAttribute('data-user-id');
+      const userName = mentionEl.getAttribute('data-user-name');
+      const userPicture = mentionEl.getAttribute('data-user-picture');
+      
+      if (userId || userName) {
+        const profile: Profile = {
+          id: userId || '',
+          name: userName || '',
+          picture: userPicture || '',
+        };
+        postMessageToParent({ profile });
+      }
+    }
+  };
 
   toggleReplying = () => {
     const { editMode, setReplyEditState, data } = this.props;
@@ -475,9 +529,12 @@ export class Comment extends Component<CommentProps, State> {
             <div
               className="comment__text raw-content"
               ref={this.textNode}
-              // eslint-disable-next-line react/no-danger
-              dangerouslySetInnerHTML={{ __html: o.text }}
               dir="auto"
+              dangerouslySetInnerHTML={{
+                __html: props.parentAuthor && props.level && props.level > 0
+                  ? `<a href="#" class="comment__mention" data-user-id="${props.parentUserId || ''}" data-user-name="${props.parentAuthor}" data-user-picture="${props.parentUserPicture || ''}">@${props.parentAuthor}</a> ${o.text}`
+                  : o.text
+              }}
             />
           )}
 

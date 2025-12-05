@@ -5,7 +5,13 @@ type Params = { [key: string]: unknown; __colors__?: Record<string, string>; sty
 
 export function createIframe({ __colors__, styles, ...params }: Params) {
   const iframe = document.createElement('iframe');
-  const query = new URLSearchParams(params as Record<string, string>).toString();
+  const searchParams = new URLSearchParams(params as Record<string, string>);
+
+  if (window.remark_config && window.remark_config.version) {
+    searchParams.set('version', window.remark_config.version);
+  }
+
+  const query = searchParams.toString();
 
   setAttributes(iframe, {
     src: `${BASE_URL}/web/iframe.html?${query}`,

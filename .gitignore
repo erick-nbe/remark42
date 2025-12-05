@@ -26,3 +26,9 @@ compose-private.yml
 http-client.env.json
 /playwright-report/
 /backend/app/cmd/var
+*.exe
+*.zip
+/dist
+backend/test.html
+backend/remark42-linux-arm64
+backend/remark42-linux-amd64

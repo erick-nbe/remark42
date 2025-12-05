@@ -38,6 +38,7 @@ import { bindActions } from 'utils/actionBinder';
 import { postMessageToParent, parseMessage, updateIframeHeight } from 'utils/post-message';
 import { useActions } from 'hooks/useAction';
 import { setCollapse } from 'store/thread/actions';
+import { setExpandedReplies } from 'store/expanded-replies/actions';
 
 import styles from './root.module.css';
 
@@ -76,6 +77,7 @@ const boundActions = bindActions({
   addComment,
   updateComment,
   setCollapse,
+  setExpandedReplies,
   signout,
 });
 
@@ -124,24 +126,43 @@ export class Root extends Component<Props, State> {
     window.addEventListener('message', this.onMessage);
   }
 
+  componentDidUpdate(prevProps: Props) {
+    // If comments were just loaded and there's a hash in the URL, check it
+    if (prevProps.isCommentsLoading && !this.props.isCommentsLoading && window.location.hash) {
+      setTimeout(this.checkUrlHash, 100);
+    }
+  }
+
   checkUrlHash = (e: Event & { newURL: string }) => {
     const hash = e ? `#${e.newURL.split('#')[1]}` : window.location.hash;
 
     if (hash.indexOf(`#${COMMENT_NODE_CLASSNAME_PREFIX}`) === 0) {
       if (e) e.preventDefault();
 
+      const commentId = hash.replace(`#${COMMENT_NODE_CLASSNAME_PREFIX}`, '');
+      const topLevelParentId = getCollapsedParent(hash, this.props.childToParentComments);
+      
+      // Check if the comment is inside collapsed replies
+      const isReply = commentId !== topLevelParentId;
+      
+      // If the comment is a reply (has a parent), expand the replies of the top-level comment
+      if (isReply) {
+        this.props.setExpandedReplies(topLevelParentId, true);
+      }
+
       if (!document.querySelector(hash)) {
-        const id = getCollapsedParent(hash, this.props.childToParentComments);
-        const indexHash = this.props.topComments.findIndex((item) => item === id);
+        const indexHash = this.props.topComments.findIndex((item) => item === topLevelParentId);
         const multiplierCollapsed = Math.ceil(indexHash / MAX_SHOWN_ROOT_COMMENTS);
         this.setState(
           {
             commentsShown: this.state.commentsShown + MAX_SHOWN_ROOT_COMMENTS * multiplierCollapsed,
           },
-          () => setTimeout(() => this.toMessage(hash), 500)
+          // If it's a reply, wait longer for the expansion animation to complete
+          () => setTimeout(() => this.toMessage(hash), isReply ? 600 : 500)
         );
       } else {
-        this.toMessage(hash);
+        // If element exists but it's a reply, still need time for expansion
+        setTimeout(() => this.toMessage(hash), isReply ? 400 : 200);
       }
     }
   };
@@ -162,6 +183,14 @@ export class Root extends Component<Props, State> {
 
     if (data.signout === true) {
       this.props.signout(false);
+    }
+
+    // Handle hash from parent window
+    if (data.hash && typeof data.hash === 'string') {
+      // Simulate a hashchange event with the received hash
+      window.location.hash = data.hash;
+      this.checkUrlHash({ newURL: window.location.href } as Event & { newURL: string });
+      return;
     }
 
     if (!data.theme || !THEMES.includes(data.theme)) {
@@ -233,7 +262,7 @@ export class Root extends Component<Props, State> {
               onUnblockSomeone={this.onUnblockSomeone}
             />
           ) : (
-            <>
+            <Fragment>
               {!isCommentsDisabled && (
                 <CommentForm
                   id={encodeURI(url || '')}
@@ -276,7 +305,7 @@ export class Root extends Component<Props, State> {
                 topComments={props.topComments}
                 showMore={this.showMore}
               />
-            </>
+            </Fragment>
           )}
         </div>
       </Fragment>
@@ -300,7 +329,7 @@ function Comments({ isLoading, topComments, commentsShown, showMore }: CommentsP
       {isLoading ? (
         <Preloader className="root__preloader" />
       ) : (
-        <>
+        <Fragment>
           {topComments.length > 0 &&
             renderComments.map((id) => (
               <Thread key={`thread-${id}`} id={id} mix="root__thread" level={0} getPreview={getPreview} />
@@ -310,7 +339,7 @@ function Comments({ isLoading, topComments, commentsShown, showMore }: CommentsP
               <FormattedMessage id="root.show-more" defaultMessage="Show more" />
             </Button>
           )}
-        </>
+        </Fragment>
       )}
     </div>
   );

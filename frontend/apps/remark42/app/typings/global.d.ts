@@ -38,6 +38,8 @@ type RemarkConfig = {
   simple_view?: boolean;
   // Optional, 'false' by default. Hides footer with signature and links to Remark42.
   no_footer?: boolean;
+  // Optional. Version string to append to asset URLs for cache busting (e.g., "1.0.0", timestamp, or build hash).
+  version?: string;
   __colors__?: Record<string, string>;
 };
 

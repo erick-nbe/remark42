@@ -17,6 +17,7 @@ import {
   COMMENT_PATCH_ACTION,
   COMMENTS_EDIT_ACTION,
 } from './types';
+import { EXPANDED_REPLIES_SET } from '../expanded-replies/types';
 import { setItem } from 'common/local-storage';
 import { LS_SORT_KEY } from 'common/constants';
 
@@ -33,9 +34,27 @@ export const setComments =
 /** appends comment to tree */
 export const addComment =
   (text: string, title: string, pid?: Comment['id']): StoreAction<Promise<void>> =>
-  async (dispatch) => {
+  async (dispatch, getState) => {
     const comment = await api.addComment({ text, title, pid });
     dispatch({ type: COMMENTS_APPEND, pid: pid || null, comment });
+    
+    // If this is a reply, find the top-level parent and expand it
+    if (pid) {
+      const state = getState();
+      const allComments = state.comments.allComments;
+      
+      // Find the top-level parent by walking up the chain
+      let topLevelParentId = pid;
+      let current = allComments[pid];
+      
+      while (current && current.pid) {
+        topLevelParentId = current.pid;
+        current = allComments[current.pid];
+      }
+      
+      // Dispatch action to expand the top-level parent
+      dispatch({ type: EXPANDED_REPLIES_SET, id: topLevelParentId, expanded: true });
+    }
   };
 
 function editComments(comment: Comment): COMMENTS_EDIT_ACTION {
