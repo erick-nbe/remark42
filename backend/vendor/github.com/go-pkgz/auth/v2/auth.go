@@ -68,17 +68,17 @@ type Opts struct {
 	AvatarRoutePath   string       // avatar routing prefix, i.e. "/api/v1/avatar", default `/avatar`
 	UseGravatar       bool         // for email based auth (verified provider) use gravatar service
 
-	AdminPasswd      string                   // if presented, allows basic auth with user admin and given password
-	BasicAuthChecker middleware.BasicAuthFunc // user custom checker for basic auth, if one defined then "AdminPasswd" will ignored
-	AudienceReader   token.Audience           // list of allowed aud values, default (empty) allows any
-	AudSecrets       bool                     // allow multiple secrets (secret per aud)
-	Logger           logger.L                 // logger interface, default is no logging at all
-	RefreshCache     middleware.RefreshCache  // optional cache to keep refreshed tokens
+	AdminPasswd      string                      // if presented, allows basic auth with user admin and given password
+	BasicAuthChecker middleware.BasicAuthFunc    // user custom checker for basic auth, if one defined then "AdminPasswd" will ignored
+	AudienceReader   token.Audience              // list of allowed aud values, default (empty) allows any
+	AudSecrets       bool                        // allow multiple secrets (secret per aud)
+	Logger           logger.L                    // logger interface, default is no logging at all
+	RefreshCache     middleware.RefreshCache     // optional cache to keep refreshed tokens
+	ErrorHandler     middleware.ErrorHandlerFunc // custom error handler for auth failures
 }
 
 // NewService initializes everything
 func NewService(opts Opts) (res *Service) {
-
 	res = &Service{
 		opts:   opts,
 		logger: opts.Logger,
@@ -87,6 +87,7 @@ func NewService(opts Opts) (res *Service) {
 			AdminPasswd:      opts.AdminPasswd,
 			BasicAuthChecker: opts.BasicAuthChecker,
 			RefreshCache:     opts.RefreshCache,
+			ErrorHandler:     opts.ErrorHandler,
 		},
 		issuer:      opts.Issuer,
 		useGravatar: opts.UseGravatar,
@@ -172,8 +173,7 @@ func (s *Service) Handlers() (authHandler, avatarHandler http.Handler) {
 		// allow logout without specifying provider
 		if elems[len(elems)-1] == "logout" {
 			if len(s.providers) == 0 {
-				w.WriteHeader(http.StatusBadRequest)
-				rest.RenderJSON(w, rest.JSON{"error": "providers not defined"})
+				_ = rest.EncodeJSON(w, http.StatusBadRequest, rest.JSON{"error": "providers not defined"})
 				return
 			}
 			s.providers[0].Handler(w, r)
@@ -184,12 +184,11 @@ func (s *Service) Handlers() (authHandler, avatarHandler http.Handler) {
 		if elems[len(elems)-1] == "user" {
 			claims, _, err := s.jwtService.Get(r)
 			if err != nil || claims.User == nil {
-				w.WriteHeader(http.StatusUnauthorized)
 				msg := "user is nil"
 				if err != nil {
 					msg = err.Error()
 				}
-				rest.RenderJSON(w, rest.JSON{"error": msg})
+				_ = rest.EncodeJSON(w, http.StatusUnauthorized, rest.JSON{"error": msg})
 				return
 			}
 			rest.RenderJSON(w, claims.User)
@@ -211,8 +210,7 @@ func (s *Service) Handlers() (authHandler, avatarHandler http.Handler) {
 		provName := elems[len(elems)-2]
 		p, err := s.Provider(provName)
 		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			rest.RenderJSON(w, rest.JSON{"error": fmt.Sprintf("provider %s not supported", provName)})
+			_ = rest.EncodeJSON(w, http.StatusBadRequest, rest.JSON{"error": fmt.Sprintf("provider %s not supported", provName)})
 			return
 		}
 		p.Handler(w, r)
@@ -323,6 +321,25 @@ func (s *Service) AddProvider(name, cid, csecret string) {
 	s.addProviderByName(name, p)
 }
 
+// AddMicrosoftProvider adds microsoft provider with a configurable tenant.
+// If tenant is empty, "common" is used. For single-tenant Entra ID apps,
+// pass the directory (tenant) ID or domain name.
+// For advanced configuration (e.g., UserAttributes), construct provider.Params directly.
+func (s *Service) AddMicrosoftProvider(cid, csecret, tenant string) {
+	p := provider.Params{
+		URL:             s.opts.URL,
+		JwtService:      s.jwtService,
+		Issuer:          s.issuer,
+		AvatarSaver:     s.avatarProxy,
+		Cid:             cid,
+		Csecret:         csecret,
+		L:               s.logger,
+		UserAttributes:  map[string]string{},
+		MicrosoftTenant: tenant,
+	}
+	s.addProvider(provider.NewMicrosoft(p))
+}
+
 // AddDevProvider with a custom host and port
 func (s *Service) AddDevProvider(host string, port int) {
 	p := provider.Params{
@@ -347,7 +364,7 @@ func (s *Service) AddAppleProvider(appleConfig provider.AppleConfig, privKeyLoad
 		L:           s.logger,
 	}
 
-	// Error checking at create need for catch one when apple private key init
+	// error checking at create need for catch one when apple private key init
 	appleProvider, err := provider.NewApple(p, appleConfig, privKeyLoader)
 	if err != nil {
 		return fmt.Errorf("an AppleProvider creating failed: %w", err)

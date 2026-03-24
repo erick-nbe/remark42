@@ -10,7 +10,7 @@ import (
 
 	log "github.com/go-pkgz/lgr"
 	ntf "github.com/go-pkgz/notify"
-	"github.com/go-pkgz/repeater"
+	"github.com/go-pkgz/repeater/v2"
 	"github.com/hashicorp/go-multierror"
 
 	"github.com/umputun/remark42/backend/app/templates"
@@ -26,7 +26,7 @@ type EmailParams struct {
 	SubscribeURL             string   // full subscribe handler URL
 	UnsubscribeURL           string   // full unsubscribe handler URL
 
-	TokenGenFn func(userID, email, site string) (string, error) // Unsubscribe token generation function
+	TokenGenFn func(userID, email, site string) (string, error) // unsubscribe token generation function
 }
 
 // Email implements notify.Destination for email
@@ -161,14 +161,14 @@ func (e *Email) buildAndSendMessage(ctx context.Context, req Request, email stri
 		return err
 	}
 
-	return repeater.NewDefault(5, time.Millisecond*250).Do(
+	return repeater.NewFixed(5, time.Millisecond*250).Do(
 		ctx,
 		func() error {
 			return e.Email.Send(
 				ctx,
 				fmt.Sprintf("mailto:%s?from=%s&unsubscribeLink=%s&subject=%s",
 					email,
-					e.From,
+					url.QueryEscape(e.From),
 					url.QueryEscape(msg.unsubscribeLink),
 					url.QueryEscape(msg.subject),
 				),
@@ -196,14 +196,14 @@ func (e *Email) SendVerification(ctx context.Context, req VerificationRequest) e
 		return err
 	}
 
-	return repeater.NewDefault(5, time.Millisecond*250).Do(
+	return repeater.NewFixed(5, time.Millisecond*250).Do(
 		ctx,
 		func() error {
 			return e.Email.Send(
 				ctx,
 				fmt.Sprintf("mailto:%s?from=%s&subject=%s",
 					req.Email,
-					e.From,
+					url.QueryEscape(e.From),
 					url.QueryEscape(e.VerificationSubject),
 				),
 				msg,

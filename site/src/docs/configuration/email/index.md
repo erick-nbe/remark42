@@ -41,7 +41,7 @@ Here is the list of variables that affect user email notifications:
 
 ```yaml
 NOTIFY_USERS=email
-NOTIFY_EMAIL_FROM=notify@example.com
+NOTIFY_EMAIL_FROM="Remark42 notifications"<notify@example.com>
 NOTIFY_EMAIL_VERIFICATION_SUBJ # "Email verification" by default
 ```
 
@@ -51,7 +51,7 @@ Admin would receive a message for each new comment on your site. Here is the lis
 
 ```yaml
 NOTIFY_ADMINS=email
-NOTIFY_EMAIL_FROM=notify@example.com
+NOTIFY_EMAIL_FROM="Remark42 notifications"<notify@example.com>
 ADMIN_SHARED_EMAIL=admin@example.com
 ```
 
@@ -65,8 +65,8 @@ Here is an example of a configuration using the [Mailgun](https://www.mailgun.co
 - SMTP_TLS=true
 - SMTP_USERNAME=postmaster@mg.example.com
 - SMTP_PASSWORD=secretpassword
-- AUTH_EMAIL_FROM=notify@example.com
-- NOTIFY_EMAIL_FROM=notify@example.com
+- AUTH_EMAIL_FROM="Remark42 login"<notify@example.com>
+- NOTIFY_EMAIL_FROM="Remark42 notifications"<notify@example.com>
 ```
 
 ### SendGrid
@@ -79,8 +79,8 @@ Here is an example of a configuration using the [SendGrid](https://sendgrid.com/
 - SMTP_TLS=true
 - SMTP_USERNAME=apikey
 - SMTP_PASSWORD=key-123456789
-- AUTH_EMAIL_FROM=notify@example.com
-- NOTIFY_EMAIL_FROM=notify@example.com
+- AUTH_EMAIL_FROM="Remark42 login"<notify@example.com>
+- NOTIFY_EMAIL_FROM="Remark42 notifications"<notify@example.com>
 ```
 
 ### Mailgun or SendGrid without exposing your server's IP
@@ -141,16 +141,16 @@ sendgrid:
 
 ### Gmail
 
-Configuration example for Gmail:
+If 2FA is enabled for your account, separate [app password](https://support.google.com/accounts/answer/185833?hl=en) has to be generated. Configuration example for Gmail:
 
 ```yaml
 - SMTP_HOST=smtp.gmail.com
 - SMTP_PORT=465
 - SMTP_TLS=true
 - SMTP_USERNAME=example.user@gmail.com
-- SMTP_PASSWORD=secretpassword
-- AUTH_EMAIL_FROM=example.user@gmail.com
-- NOTIFY_EMAIL_FROM=example.user@gmail.com
+- SMTP_PASSWORD=aaaa bbbb cccc dddd
+- AUTH_EMAIL_FROM="Remark42 login"<example.user@gmail.com>
+- NOTIFY_EMAIL_FROM="Remark42 notifications"<example.user@gmail.com>
 ```
 
 ### Amazon SES
@@ -163,8 +163,8 @@ Configuration example for [Amazon SES](https://aws.amazon.com/ses/) (us-east-1 r
 - SMTP_TLS=true
 - SMTP_USERNAME=access_key_id
 - SMTP_PASSWORD=secret_access_key
-- AUTH_EMAIL_FROM=notify@example.com
-- NOTIFY_EMAIL_FROM=notify@example.com
+- AUTH_EMAIL_FROM="Remark42 login"<notify@example.com>
+- NOTIFY_EMAIL_FROM="Remark42 notifications"<notify@example.com>
 ```
 
 You must first [verify](https://docs.aws.amazon.com/ses/latest/DeveloperGuide/verify-domain-procedure.html) a domain or email you will use in `AUTH_EMAIL_FROM` or `NOTIFY_EMAIL_FROM`.
@@ -186,7 +186,7 @@ After you set `SMTP_` variables, you can allow email authentication by setting t
 
 ```yaml
 - AUTH_EMAIL_ENABLE=true
-- AUTH_EMAIL_FROM=notify@example.com
+- AUTH_EMAIL_FROM="Remark42 login"<notify@example.com>
 ```
 
 ## HTML templates for emails and error messages
@@ -218,3 +218,79 @@ The easiest way to test it is to mount `error_response.html.tmpl`, and then head
 ![Error_template](images/error_template.png)
 
 If the file is mounted correctly, the page will render the new file content immediately after hitting the refresh button in your browser once you change the file.
+
+### Template variables
+
+Each template has access to different variables. All templates use Go's [text/template](https://pkg.go.dev/text/template) syntax.
+
+#### `email_reply.html.tmpl` — comment notification
+
+Used for notifying users about replies to their comments and for admin notifications about new comments.
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `{{.UserName}}` | string | Comment author name |
+| `{{.UserPicture}}` | string | Comment author avatar URL |
+| `{{.CommentText}}` | string | Comment body (HTML) |
+| `{{.CommentLink}}` | string | Direct link to the comment |
+| `{{.CommentDate}}` | time.Time | Comment timestamp, format with `{{.CommentDate.Format "02.01.2006 at 15:04"}}` |
+| `{{.ParentUserName}}` | string | Parent comment author name |
+| `{{.ParentUserPicture}}` | string | Parent comment author avatar URL |
+| `{{.ParentCommentText}}` | string | Parent comment body (HTML) |
+| `{{.ParentCommentLink}}` | string | Direct link to parent comment |
+| `{{.ParentCommentDate}}` | time.Time | Parent comment timestamp |
+| `{{.PostTitle}}` | string | Title of the post |
+| `{{.Email}}` | string | Recipient email address |
+| `{{.UnsubscribeLink}}` | string | Unsubscribe URL |
+| `{{.ForAdmin}}` | bool | True when this is an admin notification |
+
+#### `email_confirmation_subscription.html.tmpl` — subscription confirmation
+
+Sent when a user subscribes to email notifications for a comment thread.
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `{{.User}}` | string | Username |
+| `{{.Token}}` | string | Confirmation token |
+| `{{.Email}}` | string | Recipient email address |
+| `{{.Site}}` | string | Site name |
+| `{{.SubscribeURL}}` | string | Subscription confirmation base URL |
+
+#### `email_confirmation_login.html.tmpl` — login confirmation
+
+Sent when a user logs in via email authentication.
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `{{.User}}` | string | Username |
+| `{{.Token}}` | string | Login token |
+| `{{.Email}}` | string | Recipient email address |
+| `{{.Site}}` | string | Site name |
+| `{{.Address}}` | string | Recipient address |
+
+### Plain-text emails
+
+The default templates produce HTML emails. To send plain-text emails instead, set `AUTH_EMAIL_CONTENT_TYPE=text/plain` (for login confirmation) or `NOTIFY_EMAIL_CONTENT_TYPE=text/plain` (for notifications), and provide custom templates that output plain text instead of HTML.
+
+Note that `{{.CommentText}}` and `{{.ParentCommentText}}` contain HTML markup. There is no built-in HTML-to-text conversion, so for comments with rich formatting the output will include raw HTML tags.
+
+Example plain-text notification template (`email_reply.html.tmpl`):
+
+```
+New reply from {{.UserName}}{{if .PostTitle}} on "{{.PostTitle}}"{{end}}
+
+{{.CommentText}}
+{{.CommentDate.Format "02.01.2006 at 15:04"}}
+{{.CommentLink}}
+{{- if .ParentCommentText}}
+
+In reply to {{.ParentUserName}}:
+{{.ParentCommentText}}
+{{.ParentCommentLink}}
+{{- end}}
+
+Sent to {{.Email}}
+{{- if .UnsubscribeLink}}
+Unsubscribe: {{.UnsubscribeLink}}
+{{- end}}
+```

@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-chi/render"
 	"github.com/go-pkgz/auth/v2/token"
 	"github.com/go-pkgz/lgr"
 	R "github.com/go-pkgz/rest"
@@ -94,6 +93,7 @@ func TestRest_CreateAndPreviewWithImage(t *testing.T) {
 		RoutePath:     "/api/v1/img",
 		RemarkURL:     srv.RemarkURL,
 		ImageService:  srv.ImageService,
+		Transport:     http.DefaultTransport,
 	}
 	srv.CommentFormatter = store.NewCommentFormatter(srv.ImageProxy)
 	// need to recreate the server with new ImageProxy, otherwise old one will be used
@@ -970,7 +970,7 @@ func TestRest_EmailNotification(t *testing.T) {
 	require.NoError(t, resp.Body.Close())
 	require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 	parentComment := store.Comment{}
-	require.NoError(t, render.DecodeJSON(strings.NewReader(string(body)), &parentComment))
+	require.NoError(t, json.Unmarshal(body, &parentComment))
 	// wait for mock notification Submit to kick off
 	time.Sleep(time.Millisecond * 30)
 	require.Equal(t, 1, len(mockDestination.Get()))
@@ -1220,7 +1220,7 @@ func TestRest_TelegramNotification(t *testing.T) {
 	require.NoError(t, resp.Body.Close())
 	require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 	parentComment := store.Comment{}
-	require.NoError(t, render.DecodeJSON(strings.NewReader(string(body)), &parentComment))
+	require.NoError(t, json.Unmarshal(body, &parentComment))
 	// wait for mock notification Submit to kick off
 	time.Sleep(time.Millisecond * 30)
 	require.Equal(t, 1, len(mockDestination.Get()))
@@ -1690,4 +1690,27 @@ func (m *mockTelegram) CheckToken(string, string) (telegram, site string, err er
 		return "", "", fmt.Errorf("not verified")
 	}
 	return "good_telegram", m.site, nil
+}
+
+func TestExtractIP(t *testing.T) {
+	tbl := []struct {
+		addr string
+		exp  string
+	}{
+		{"127.0.0.1:8080", "127.0.0.1"},
+		{"127.0.0.1", "127.0.0.1"},
+		{"192.168.1.1:443", "192.168.1.1"},
+		{"[::1]:8080", "::1"},
+		{"::1", "::1"},
+		{"[2001:db8::1]:8080", "2001:db8::1"},
+		{"2001:db8::1", "2001:db8::1"},
+		{"[fe80::1%25eth0]:80", "fe80::1%25eth0"},
+		{"", ""},
+	}
+
+	for _, tt := range tbl {
+		t.Run(tt.addr, func(t *testing.T) {
+			assert.Equal(t, tt.exp, extractIP(tt.addr))
+		})
+	}
 }

@@ -178,8 +178,8 @@ BKT
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	b, err := io.ReadAll(resp.Body)
 	assert.NoError(t, err)
-	assert.Equal(t, `<pre class="chroma"><code><span class="line"><span class="cl"><span class="kd">func</span> <span class="nf">main</span><span class="p">(</span><span class="nx">aa</span> <span class="kt">string</span><span class="p">)</span> <span class="kt">int</span> <span class="p">{</span><span class="k">return</span> <span class="mi">0</span><span class="p">}</span>
-</span></span></code></pre>`, string(b))
+	assert.Equal(t, `<pre class="chroma"><code><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="nx">aa</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="p">{</span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">}</span><span class="w">
+</span></span></span></code></pre>`, string(b))
 	assert.NoError(t, resp.Body.Close())
 }
 
@@ -562,8 +562,8 @@ func TestPublic_FindCommentsCtrl_ConsistentCount(t *testing.T) {
 		}
 	}
 
-	// Adding initial comments (8 to test-url and 1 to another-url) and voting, and delete two of comments to the first post.
-	// With sleep so that at least few millisecond pass between each comment
+	// adding initial comments (8 to test-url and 1 to another-url) and voting, and delete two of comments to the first post.
+	// with sleep so that at least few millisecond pass between each comment
 	// and later we would be able to use that in "since" filter with millisecond precision
 	ids := make([]string, 9)
 	timestamps := make([]time.Time, 9)
