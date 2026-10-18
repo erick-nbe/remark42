@@ -20,6 +20,7 @@ import (
 	"github.com/go-pkgz/rest/logger"
 	"github.com/go-pkgz/routegroup"
 
+	"github.com/umputun/remark42/backend/app/moderation"
 	"github.com/umputun/remark42/backend/app/notify"
 	"github.com/umputun/remark42/backend/app/rest"
 	"github.com/umputun/remark42/backend/app/rest/proxy"
@@ -33,15 +34,16 @@ import (
 type Rest struct {
 	Version string
 
-	DataService      *service.DataStore
-	Authenticator    *auth.Service
-	Cache            LoadingCache
-	ImageProxy       *proxy.Image
-	CommentFormatter *store.CommentFormatter
-	Migrator         *Migrator
-	NotifyService    *notify.Service
-	TelegramService  telegramService
-	ImageService     *image.Service
+	DataService       *service.DataStore
+	Authenticator     *auth.Service
+	Cache             LoadingCache
+	ImageProxy        *proxy.Image
+	CommentFormatter  *store.CommentFormatter
+	Migrator          *Migrator
+	NotifyService     *notify.Service
+	TelegramService   telegramService
+	ImageService      *image.Service
+	ModerationService *moderation.Service
 
 	AnonVote        bool
 	WebRoot         string
@@ -416,6 +418,7 @@ func (s *Rest) controllerGroups() (public, private, admin, rss) {
 		dataService:                s.DataService,
 		cache:                      s.Cache,
 		imageService:               s.ImageService,
+		moderationService:          s.ModerationService,
 		commentFormatter:           s.CommentFormatter,
 		readOnlyAge:                s.ReadOnlyAge,
 		authenticator:              s.Authenticator,

@@ -39,6 +39,9 @@ const (
 	ErrAssetNotFound        = 18 // requested file not found
 	ErrCommentRestrictWords = 19 // restricted words in a comment
 	ErrImgNotFound          = 20 // posted image not found in the storage
+	ErrAccountTooNew        = 21 // account is too new for this action
+	ErrLinksBlocked         = 22 // links are not allowed in comments
+	ErrTooManyImages        = 23 // too many images in the comment
 )
 
 // errTmplData store data for error message

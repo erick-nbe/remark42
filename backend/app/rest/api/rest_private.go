@@ -23,6 +23,7 @@ import (
 	R "github.com/go-pkgz/rest"
 	"github.com/golang-jwt/jwt/v5"
 
+	"github.com/umputun/remark42/backend/app/moderation"
 	"github.com/umputun/remark42/backend/app/notify"
 	"github.com/umputun/remark42/backend/app/rest"
 	"github.com/umputun/remark42/backend/app/store"
@@ -38,6 +39,7 @@ type private struct {
 	readOnlyAge                int
 	commentFormatter           *store.CommentFormatter
 	imageService               *image.Service
+	moderationService          *moderation.Service
 	notifyService              *notify.Service
 	authenticator              *auth.Service
 	telegramService            telegramService
@@ -129,6 +131,13 @@ func (s *private) createCommentCtrl(w http.ResponseWriter, r *http.Request) {
 	}
 	comment = s.commentFormatter.Format(comment, s.disableFancyTextFormatting)
 
+	if s.moderationService != nil {
+		if err := s.moderationService.CheckNewComment(comment.User, comment.Locator.SiteID, comment.Text); err != nil {
+			sendModerationError(w, r, err)
+			return
+		}
+	}
+
 	// check if images are valid, omit proxied images as they are lazy-loaded
 	for _, id := range s.imageService.ExtractNonProxiedPictures(comment.Text) {
 		_, err := s.imageService.Load(id)
@@ -217,6 +226,13 @@ func (s *private) updateCommentCtrl(w http.ResponseWriter, r *http.Request) {
 		Admin:   user.Admin,
 	}
 
+	if !edit.Delete && s.moderationService != nil {
+		if err := s.moderationService.CheckCommentUpdate(user, locator.SiteID, editReq.Text, currComment.Text); err != nil {
+			sendModerationError(w, r, err)
+			return
+		}
+	}
+
 	res, err := s.dataService.EditComment(locator, id, editReq)
 	if errors.Is(err, service.ErrRestrictedWordsFound) {
 		rest.SendErrorJSON(w, r, http.StatusBadRequest, err, "invalid comment", rest.ErrCommentValidation)
@@ -236,6 +252,13 @@ func (s *private) updateCommentCtrl(w http.ResponseWriter, r *http.Request) {
 // GET /user?site=siteID - returns user info
 func (s *private) userInfoCtrl(w http.ResponseWriter, r *http.Request) {
 	user := rest.MustGetUserInfo(r)
+	if s.moderationService != nil {
+		siteID := r.URL.Query().Get("site")
+		if siteID == "" {
+			siteID = user.SiteID
+		}
+		s.moderationService.Track(siteID, user.ID, user.Admin)
+	}
 	if siteID := r.URL.Query().Get("site"); siteID != "" {
 		user.Verified = s.dataService.IsVerified(siteID, user.ID)
 
@@ -730,6 +753,17 @@ func (s *private) deleteMeCtrl(w http.ResponseWriter, r *http.Request) {
 func (s *private) savePictureCtrl(w http.ResponseWriter, r *http.Request) {
 	user := rest.MustGetUserInfo(r)
 
+	if s.moderationService != nil {
+		siteID := r.URL.Query().Get("site")
+		if siteID == "" {
+			siteID = user.SiteID
+		}
+		if err := s.moderationService.CheckImageUpload(user, siteID); err != nil {
+			sendModerationError(w, r, err)
+			return
+		}
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, 32*1024*1024) // hard cap on upload to prevent memory exhaustion
 	// gosec G120: r.Body is already bounded by MaxBytesReader on the line above (32 MB),
 	// so ParseMultipartForm cannot read more than that regardless of the in-memory threshold.
@@ -763,6 +797,20 @@ func (s *private) isReadOnly(locator store.Locator) bool {
 		}
 	}
 	return s.dataService.IsReadOnly(locator) // ro manually
+}
+
+// sendModerationError maps a moderation rejection to the matching HTTP status and error code.
+func sendModerationError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, moderation.ErrAccountTooNew):
+		rest.SendErrorJSON(w, r, http.StatusForbidden, err, "account age restriction", rest.ErrAccountTooNew)
+	case errors.Is(err, moderation.ErrLinksForbidden):
+		rest.SendErrorJSON(w, r, http.StatusBadRequest, err, "link in comment", rest.ErrLinksBlocked)
+	case errors.Is(err, moderation.ErrTooManyImages):
+		rest.SendErrorJSON(w, r, http.StatusBadRequest, err, "too many images", rest.ErrTooManyImages)
+	default:
+		rest.SendErrorJSON(w, r, http.StatusInternalServerError, err, "moderation check failed", rest.ErrInternal)
+	}
 }
 
 func randToken() (string, error) {

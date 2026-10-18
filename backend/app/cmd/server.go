@@ -35,6 +35,7 @@ import (
 	cache "github.com/go-pkgz/lcw/v2"
 
 	"github.com/umputun/remark42/backend/app/migrator"
+	"github.com/umputun/remark42/backend/app/moderation"
 	"github.com/umputun/remark42/backend/app/notify"
 	"github.com/umputun/remark42/backend/app/providers"
 	"github.com/umputun/remark42/backend/app/rest/api"
@@ -88,6 +89,11 @@ type ServerCommand struct {
 	TrustedProxies             []string      `long:"trusted-proxy" env:"TRUSTED_PROXY" description:"reverse-proxy networks (CIDR or IP) trusted to set the client IP; if unset, trusted from any client (see docs)" env-delim:","`
 	RestrictedWords            []string      `long:"restricted-words" env:"RESTRICTED_WORDS" description:"words prohibited to use in comments" env-delim:","`
 	RestrictedNames            []string      `long:"restricted-names" env:"RESTRICTED_NAMES" description:"names prohibited to use by user" env-delim:","`
+	MinAccountAge              time.Duration `long:"min-account-age" env:"MIN_ACCOUNT_AGE" default:"0" description:"minimum account age required to post comments, e.g. 24h, 72h, 168h; 0 disables"`
+	MinAccountAgeImages        time.Duration `long:"min-account-age-images" env:"MIN_ACCOUNT_AGE_IMAGES" default:"0" description:"minimum account age required to attach images, e.g. 24h, 72h, 168h; 0 disables"`
+	BlockLinks                 bool          `long:"block-links" env:"BLOCK_LINKS" description:"reject comments which contain links"`
+	MaxImages                  int           `long:"max-images" env:"MAX_IMAGES" default:"0" description:"maximum number of images per comment, 0 disables the limit"`
+	ModerationState            string        `long:"moderation-state" env:"MODERATION_STATE" default:"./var/moderation.json" description:"file with first-seen user timestamps used by account-age moderation (not the remark42 database)"`
 	EnableEmoji                bool          `long:"emoji" env:"EMOJI" description:"enable emoji"`
 	SimpleView                 bool          `long:"simple-view" env:"SIMPLE_VIEW" description:"minimal comment editor mode"`
 	ProxyCORS                  bool          `long:"proxy-cors" env:"PROXY_CORS" description:"disable internal CORS and delegate it to proxy"`
@@ -660,6 +666,23 @@ func (s *ServerCommand) newServerApp(ctx context.Context) (*serverApp, error) {
 	dataService.RestrictSameIPVotes.Enabled = s.RestrictVoteIP
 	dataService.RestrictSameIPVotes.Duration = s.DurationVoteIP
 
+	var moderationService *moderation.Service
+	if s.MinAccountAge > 0 || s.MinAccountAgeImages > 0 || s.BlockLinks || s.MaxImages > 0 {
+		moderationService, err = moderation.NewService(moderation.Config{
+			MinAccountAgeForComment: s.MinAccountAge,
+			MinAccountAgeForImages:  s.MinAccountAgeImages,
+			BlockLinks:              s.BlockLinks,
+			MaxImages:               s.MaxImages,
+			StateFile:               s.ModerationState,
+		}, dataService)
+		if err != nil {
+			_ = dataService.Close()
+			return nil, fmt.Errorf("failed to make moderation service: %w", err)
+		}
+		log.Printf("[INFO] moderation enabled: min account age=%v, min account age for images=%v, block links=%v, max images=%d",
+			s.MinAccountAge, s.MinAccountAgeImages, s.BlockLinks, s.MaxImages)
+	}
+
 	loadingCache, err := s.makeCache()
 	if err != nil {
 		_ = dataService.Close()
@@ -754,6 +777,7 @@ func (s *ServerCommand) newServerApp(ctx context.Context) (*serverApp, error) {
 		SSLConfig:                  sslConfig,
 		UpdateLimiter:              s.UpdateLimit,
 		ImageService:               imageService,
+		ModerationService:          moderationService,
 		EmailNotifications:         contains("email", s.Notify.Users),
 		TelegramNotifications:      contains("telegram", s.Notify.Users) && telegramService != nil,
 		EmojiEnabled:               s.EnableEmoji,

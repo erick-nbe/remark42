@@ -14,6 +14,7 @@ debug.test
 .DS_Store
 .mongo
 remark42
+/remark42-linux-*
 /bin/
 /dist/
 /backend/var/

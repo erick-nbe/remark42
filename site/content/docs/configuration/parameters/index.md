@@ -161,6 +161,11 @@ services:
 | positive-score                 | POSITIVE_SCORE                 | `false`                 | restricts comment's score to be only positive            |
 | restricted-words               | RESTRICTED_WORDS               |                         | words banned in comments (can use `*`), _multi_          |
 | restricted-names               | RESTRICTED_NAMES               |                         | names prohibited to use by the user, _multi_             |
+| min-account-age                | MIN_ACCOUNT_AGE                | `0`                     | minimum account age required to post comments, e.g. `24h`, `72h`, `168h`; `0` disables |
+| min-account-age-images         | MIN_ACCOUNT_AGE_IMAGES         | `0`                     | minimum account age required to attach images, e.g. `24h`, `72h`, `168h`; `0` disables |
+| block-links                    | BLOCK_LINKS                    | `false`                 | reject comments which contain links                      |
+| max-images                     | MAX_IMAGES                     | `0`                     | maximum number of images per comment, `0` - unlimited    |
+| moderation-state               | MODERATION_STATE               | `./var/moderation.json` | file with first-seen user timestamps used by account-age moderation; this is not the remark42 database |
 | edit-time                      | EDIT_TIME                      | `5m`                    | edit window; set to `0` to disable comment editing and staged image cleanup |
 | admin-edit                     | ADMIN_EDIT                     | `false`                 | unlimited edit for admins                                |
 | read-age                       | READONLY_AGE                   |                         | read-only age of comments, days                          |
@@ -184,6 +189,15 @@ services:
 - command-line parameters are long-form `--<key>=value`, i.e., `--site=https://demo.remark42.com`
 - _multi_ parameters separated by `,` in the environment or repeated with command-line keys, like `--site=s1 --site=s2 ...`
 - _required_ parameters have to be presented in the environment or provided in the command-line
+
+### Moderation rules
+
+`min-account-age`, `min-account-age-images`, `block-links` and `max-images` add moderation on top of `restricted-words`:
+
+- `min-account-age` and `min-account-age-images` measure the time since remark42 first saw the user. That timestamp is kept in `moderation-state`, a JSON file separate from the comments database. Users who already have comments on the site count as established and are not restricted. OAuth providers do not expose their own account creation dates, so first seen is the closest available approximation of account age.
+- `block-links` rejects a comment when its rendered text contains a clickable link. Images are still allowed. Admin comments bypass the rule.
+- `max-images` limits how many images a single comment may reference.
+- `min-account-age-images` also applies to the picture upload endpoint, so images cannot be staged by an account that is too new.
 
 ### Custom OAuth2 integration
 
