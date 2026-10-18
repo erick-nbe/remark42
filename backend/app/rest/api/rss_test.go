@@ -280,6 +280,75 @@ func TestServer_RssReplies(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, code)
 }
 
+func TestAuthorAvatarURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		picture string
+		siteID  string
+		want    string
+	}{
+		{
+			name:    "adds site to remark42 avatar",
+			picture: "https://demo.remark42.com/api/v1/avatar/abc.image",
+			siteID:  "remark42",
+			want:    "https://demo.remark42.com/api/v1/avatar/abc.image?site=remark42",
+		},
+		{
+			name:    "keeps existing site",
+			picture: "https://demo.remark42.com/api/v1/avatar/abc.image?site=other",
+			siteID:  "remark42",
+			want:    "https://demo.remark42.com/api/v1/avatar/abc.image?site=other",
+		},
+		{
+			name:    "external picture unchanged",
+			picture: "https://lh3.googleusercontent.com/a/abc",
+			siteID:  "remark42",
+			want:    "https://lh3.googleusercontent.com/a/abc",
+		},
+		{name: "empty picture", picture: "", siteID: "remark42", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, authorAvatarURL(tt.picture, tt.siteID))
+		})
+	}
+}
+
+func TestServer_RssReplyAuthorAvatar(t *testing.T) {
+	ts, srv, teardown := startupT(t)
+	defer teardown()
+
+	base, _ := rssPubTime()
+	c1 := store.Comment{
+		ID:        "comment-1",
+		Text:      "parent",
+		Timestamp: base,
+		Locator:   store.Locator{URL: "https://radio-t.com/blah1", SiteID: "remark42"},
+		User:      store.User{ID: "user1", Name: "user1"},
+	}
+	c2 := store.Comment{
+		ID:        "comment-2",
+		ParentID:  "comment-1",
+		Text:      "reply",
+		Timestamp: base.Add(time.Millisecond),
+		Locator:   store.Locator{URL: "https://radio-t.com/blah1", SiteID: "remark42"},
+		User: store.User{
+			ID:      "user2",
+			Name:    "user2",
+			Picture: "https://demo.remark42.com/api/v1/avatar/21acb06ba92f6617fdd1675752c53f3a94956a93.image",
+		},
+	}
+	_, err := srv.DataService.Create(c1)
+	require.NoError(t, err)
+	_, err = srv.DataService.Create(c2)
+	require.NoError(t, err)
+
+	res, code := get(t, ts.URL+"/api/v1/rss/reply?user=user1&site=remark42")
+	require.Equal(t, http.StatusOK, code)
+	assert.Contains(t, res,
+		"<authorAvatar>https://demo.remark42.com/api/v1/avatar/21acb06ba92f6617fdd1675752c53f3a94956a93.image?site=remark42</authorAvatar>")
+}
+
 // clean formatting, i.e. multiple spaces, \t, \n
 func cleanRssFormatting(expected, actual string) (cleanExp, cleanAct string) {
 	reSpaces := regexp.MustCompile(`[\s\p{Zs}]{2,}`)

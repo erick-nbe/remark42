@@ -1,8 +1,11 @@
 package api
 
 import (
+	"encoding/xml"
 	"fmt"
 	"net/http"
+	neturl "net/url"
+	"strings"
 	"time"
 
 	cache "github.com/go-pkgz/lcw/v2"
@@ -124,7 +127,7 @@ func (s *rss) repliesCtrl(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *rss) toRssFeed(url string, comments []store.Comment, description string) (string, error) {
+func (s *rss) toRssFeed(feedURL string, comments []store.Comment, description string) (string, error) {
 	if description == "" {
 		description = "comment updates"
 	}
@@ -135,12 +138,13 @@ func (s *rss) toRssFeed(url string, comments []store.Comment, description string
 
 	feed := &feeds.Feed{
 		Title:       "Remark42 comments",
-		Link:        &feeds.Link{Href: url},
+		Link:        &feeds.Link{Href: feedURL},
 		Description: description,
 		Created:     lastCommentTS,
 	}
 
 	feed.Items = []*feeds.Item{}
+	avatars := make([]string, 0, len(comments))
 	for i, c := range comments {
 		f := feeds.Item{
 			Title:       c.User.Name,
@@ -165,9 +169,61 @@ func (s *rss) toRssFeed(url string, comments []store.Comment, description string
 		}
 
 		feed.Items = append(feed.Items, &f)
+		avatars = append(avatars, authorAvatarURL(c.User.Picture, c.Locator.SiteID))
 		if i > maxRssItems {
 			break
 		}
 	}
-	return feed.ToRss()
+
+	rssXML, err := feed.ToRss()
+	if err != nil {
+		return "", err
+	}
+	return addAuthorAvatars(rssXML, avatars)
+}
+
+// authorAvatarURL adds the site query used by remark42's avatar route to the stored
+// avatar URL. Pictures that are not served by remark42 are returned unchanged.
+func authorAvatarURL(picture, siteID string) string {
+	if picture == "" || siteID == "" {
+		return picture
+	}
+	u, err := neturl.Parse(picture)
+	if err != nil || !strings.Contains(u.Path, "/api/v1/avatar/") {
+		return picture
+	}
+	if u.Query().Get("site") == "" {
+		q := u.Query()
+		q.Set("site", siteID)
+		u.RawQuery = q.Encode()
+	}
+	return u.String()
+}
+
+// addAuthorAvatars injects the non-standard <authorAvatar> element before each RSS
+// item's closing tag. gorilla/feeds has no extension support; doing the injection on
+// the generated XML keeps the library's output (including its namespaces) untouched.
+func addAuthorAvatars(rssXML string, avatars []string) (string, error) {
+	parts := strings.Split(rssXML, "</item>")
+	if len(parts)-1 != len(avatars) {
+		return "", fmt.Errorf("rss item count mismatch: %d items, %d avatars", len(parts)-1, len(avatars))
+	}
+
+	var b strings.Builder
+	b.Grow(len(rssXML) + len(avatars)*64)
+	for i, part := range parts {
+		b.WriteString(part)
+		if i == len(parts)-1 {
+			break
+		}
+		if avatars[i] != "" {
+			b.WriteString("<authorAvatar>")
+			if err := xml.EscapeText(&b, []byte(avatars[i])); err != nil {
+				return "", fmt.Errorf("can't escape authorAvatar: %w", err)
+			}
+			b.WriteString("</authorAvatar>")
+		}
+		b.WriteString("</item>")
+	}
+	return b.String(), nil
 }
